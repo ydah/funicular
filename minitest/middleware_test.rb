@@ -143,11 +143,36 @@ class MiddlewareTest < Minitest::Test
     assert_equal [true], swept, "expected the Propshaft cache sweeper to run"
   end
 
+  def test_plugin_javascript_participates_in_staleness_checks
+    spec = Struct.new(:asset_paths).new([Pathname("/plugin/bridge.js")])
+    registry = Struct.new(:local_source_files, :specs).new(["/plugin/client.rb"], [spec])
+    original = Funicular::Plugin::Registry.method(:new)
+    Funicular::Plugin::Registry.define_singleton_method(:new) { |_root| registry }
+    Rails.root = Pathname("/app")
+
+    files = Funicular::Middleware.new(@app).send(:plugin_source_files)
+
+    assert_equal ["/plugin/client.rb", "/plugin/bridge.js"], files
+  ensure
+    Funicular::Plugin::Registry.define_singleton_method(:new, original)
+  end
+
+  def test_source_snapshot_detects_file_removal
+    with_app do |dir|
+      middleware = Funicular::Middleware.new(@app)
+      first = middleware.send(:source_snapshot)
+      FileUtils.rm(File.join(dir, "app", "funicular", "home_component.rb"))
+
+      refute_equal first, middleware.send(:source_snapshot)
+    end
+  end
+
   def test_reset_clears_class_state
     Funicular::Middleware.last_mtime = Time.now
     Funicular::Middleware.compiling = true
     Funicular::Middleware.reset!
     assert_nil Funicular::Middleware.last_mtime
+    assert_nil Funicular::Middleware.source_snapshot
     refute Funicular::Middleware.compiling
     assert_instance_of Mutex, Funicular::Middleware.mutex
   end

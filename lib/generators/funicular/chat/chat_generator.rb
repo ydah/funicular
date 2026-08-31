@@ -76,7 +76,8 @@ module Funicular
 
         if content.include?("<%= csrf_meta_tags %>")
           inject_into_file layout.to_s,
-                           "    <%= picoruby_include_tag %>\n",
+                           "    <%= funicular_plugin_include_tags %>\n" \
+                           "    <%= picoruby_include_tag defer: true %>\n",
                            after: "    <%= csrf_meta_tags %>\n"
         else
           say_status :skip, "layout does not contain csrf_meta_tags; add <%= picoruby_include_tag %> manually", :yellow

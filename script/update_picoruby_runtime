@@ -1,0 +1,68 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "open3"
+require "pathname"
+require "rbconfig"
+require "shellwords"
+require "tmpdir"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+LOCK_PATH = File.join(ROOT, "integration/picoruby.lock.yml")
+SHA_PATTERN = /\A[0-9a-f]{40}\z/
+
+def run!(*command, chdir:, env: {})
+  puts "+ #{Shellwords.join(command)}"
+  abort "command failed" unless system(env, *command, chdir: chdir)
+end
+
+revision = ARGV.first
+abort "usage: script/update_picoruby_runtime <40-character-sha>" unless revision&.match?(SHA_PATTERN)
+
+lock = YAML.safe_load_file(LOCK_PATH, aliases: false)
+dependency = lock.fetch("dependency")
+repository = ENV.fetch("PICORUBY_REPOSITORY", dependency.fetch("repository"))
+ruby = RbConfig.ruby
+build_env = {
+  "PATH" => [File.dirname(ruby), ENV.fetch("PATH")].join(File::PATH_SEPARATOR)
+}
+
+Dir.mktmpdir("funicular-picoruby-") do |tmp_dir|
+  source_dir = File.join(tmp_dir, "source")
+  run!("git", "clone", "--filter=blob:none", "--no-checkout", repository, source_dir, chdir: ROOT)
+  run!("git", "-C", source_dir, "fetch", "--depth=1", "origin", revision, chdir: ROOT)
+  run!("git", "-C", source_dir, "checkout", "--detach", revision, chdir: ROOT)
+  run!("git", "-C", source_dir, "submodule", "update", "--init", "--recursive", chdir: ROOT)
+
+  actual_revision, status = Open3.capture2("git", "-C", source_dir, "rev-parse", "HEAD")
+  abort "cannot read checked out revision" unless status.success?
+  actual_revision = actual_revision.strip
+  abort "checkout mismatch: expected #{revision}, got #{actual_revision}" unless actual_revision == revision
+
+  run!(ruby, "-S", "rake", "wasm:build_release_artifacts", chdir: source_dir, env: build_env)
+  run!(
+    ruby, "-S", "bundle", "exec", "rake", "copy_wasm",
+    chdir: ROOT,
+    env: {
+      "PICORUBY_WASM_NPM_DIR" => File.join(source_dir, "mrbgems/picoruby-wasm/npm"),
+      "PICORUBY_WASM_TEST_DIR" => File.join(source_dir, "build/picoruby-wasm-test/bin")
+    }
+  )
+end
+
+revision_file = File.expand_path(lock.fetch("artifacts").fetch("revision_file"), ROOT)
+File.write(revision_file, "#{revision}\n")
+
+artifact_paths = Dir.glob(File.join(ROOT, "lib/funicular/vendor/{mrbc,picoruby,picoruby-test-node}/**/*"))
+                    .select { |path| File.file?(path) }
+                    .sort
+lock["dependency"]["repository"] = repository
+lock["dependency"]["revision"] = revision
+lock["artifacts"]["sha256"] = artifact_paths.to_h do |path|
+  [Pathname.new(path).relative_path_from(Pathname.new(ROOT)).to_s, Digest::SHA256.file(path).hexdigest]
+end
+File.write(LOCK_PATH, YAML.dump(lock))
+
+run!(ruby, File.join(ROOT, "script/verify_picoruby_runtime"), chdir: ROOT)

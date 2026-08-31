@@ -61,7 +61,8 @@ namespace :funicular do
     puts ""
     puts "Next steps:"
     puts "  1. In your layout, replace any hardcoded PicoRuby <script> tag with:"
-    puts '       <%= picoruby_include_tag %>'
+    puts '       <%= funicular_plugin_include_tags %>'
+    puts '       <%= picoruby_include_tag defer: true %>'
     puts ""
     puts "  2. (Optional) Edit config/initializers/funicular.rb to choose the source"
     puts "     for each environment (:local_debug, :local_dist, :cdn)."

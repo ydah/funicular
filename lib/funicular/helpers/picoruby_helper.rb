@@ -119,15 +119,23 @@ module Funicular
       #
       # Plugins are gems in the Gemfile :funicular group. Their Ruby sources
       # are compiled into app.mrb before the application sources; this helper
-      # emits browser assets such as CSS.
+      # emits browser CSS and JavaScript before the PicoRuby bootstrap tag.
       def funicular_plugin_include_tags
         registry = Funicular::Plugin::Registry.new(Rails.root)
         tags = registry.asset_entries.map do |entry|
           logical_path = entry.fetch("logical_path")
-          if entry["type"] == "css"
+          case entry.fetch("type")
+          when "css"
             stylesheet_link_tag(logical_path, "data-turbo-track": "reload")
+          when "js"
+            tag.script(
+              "",
+              src: asset_path(logical_path),
+              defer: true,
+              data: { funicular_plugin: logical_path.split("/", 4).fetch(2), turbo_track: "reload" }
+            )
           else
-            tag.script("", type: "application/x-mrb", src: asset_path(logical_path), data: { funicular_plugin: true })
+            raise Funicular::Plugin::Error, "Unknown Funicular plugin asset type: #{entry.fetch("type").inspect}"
           end
         end
         safe_join(tags)

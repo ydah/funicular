@@ -1,0 +1,71 @@
+name: PicoRuby integration
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - integration/**
+      - script/update_picoruby_runtime
+      - script/verify_picoruby_runtime
+      - lib/funicular/vendor/**
+      - .github/workflows/integration.yml
+  push:
+    branches:
+      - integration/observability-v1
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
+jobs:
+  pinned-runtime:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.5'
+          bundler-cache: true
+      - run: npm install --no-save jsdom@26.1.0
+      - run: script/verify_picoruby_runtime
+      - run: bundle exec rake
+      - run: bundle exec rake test:pico
+
+  floating-integration:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.5'
+          bundler-cache: true
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y brotli
+      - run: npm install --no-save jsdom@26.1.0
+      - id: revision
+        run: echo "sha=$(git ls-remote https://github.com/ydah/picoruby.git refs/heads/integration | cut -f1)" >> "$GITHUB_OUTPUT"
+      - run: script/update_picoruby_runtime "${{ steps.revision.outputs.sha }}"
+      - run: bundle exec rake
+      - run: bundle exec rake test:pico
+
+  upstream-compatibility:
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: '4.0.5'
+          bundler-cache: true
+      - uses: mymindstorm/setup-emsdk@v14
+      - run: sudo apt-get update
+      - run: sudo apt-get install -y brotli
+      - run: npm install --no-save jsdom@26.1.0
+      - id: revision
+        run: echo "sha=$(git ls-remote https://github.com/picoruby/picoruby.git refs/heads/master | cut -f1)" >> "$GITHUB_OUTPUT"
+      - run: script/update_picoruby_runtime "${{ steps.revision.outputs.sha }}"
+        env:
+          PICORUBY_REPOSITORY: https://github.com/picoruby/picoruby.git
+      - run: bundle exec rake
+      - run: bundle exec rake test:pico

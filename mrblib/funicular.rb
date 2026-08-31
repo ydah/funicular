@@ -251,6 +251,29 @@ module Funicular
   #   Funicular.start(MyComponent, container: 'app')
   #   Funicular.start(MyComponent, container: 'app', props: { name: 'John' })
   def self.start(component_class = nil, container: 'app', props: {}, hydrate: false, &block)
+    unless Funicular::Instrumentation.enabled?("funicular.boot")
+      return __start_uninstrumented(
+        component_class, container: container, props: props, hydrate: hydrate, &block
+      )
+    end
+
+    local_database = Funicular::DB.local_database_enabled?
+    Funicular::Instrumentation.instrument(
+      "funicular.boot", self,
+      { "funicular.local_database.enabled" => local_database }
+    ) do |span|
+      result = __start_uninstrumented(
+        component_class, container: container, props: props, hydrate: hydrate, &block
+      )
+      span.attributes["funicular.boot.result"] = result ? "started" : "aborted"
+      if local_database
+        span.attributes["funicular.durability"] = Funicular::DB.durability.to_s
+      end
+      result
+    end
+  end
+
+  def self.__start_uninstrumented(component_class = nil, container: 'app', props: {}, hydrate: false, &block)
     # On the server we only need route registration so SSR can resolve a
     # path to a component. Skip all DOM/JS work (container lookup, popstate
     # listener, debug export).

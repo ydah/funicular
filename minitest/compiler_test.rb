@@ -150,7 +150,7 @@ class CompilerTest < Minitest::Test
 
   def test_compile_to_mrb_succeeds_when_command_exits_zero
     Dir.mktmpdir do |dir|
-      compiler = prepared_compiler(dir, node: "/bin/true", debug_mode: true)
+      compiler = prepared_compiler(dir, node: "true", debug_mode: true)
       out, = capture_io { compiler.send(:compile_to_mrb) }
       assert_includes out, "Successfully compiled"
       assert_includes out, "Debug mode: true"
@@ -159,7 +159,7 @@ class CompilerTest < Minitest::Test
 
   def test_compile_to_mrb_raises_when_command_fails
     Dir.mktmpdir do |dir|
-      compiler = prepared_compiler(dir, node: "/bin/false")
+      compiler = prepared_compiler(dir, node: "false")
       error = nil
       capture_io do
         error = assert_raises(RuntimeError) { compiler.send(:compile_to_mrb) }
@@ -170,7 +170,7 @@ class CompilerTest < Minitest::Test
 
   def test_compile_to_mrb_deletes_env_file_unless_kept
     Dir.mktmpdir do |dir|
-      compiler = prepared_compiler(dir, node: "/bin/true")
+      compiler = prepared_compiler(dir, node: "true")
       env_file = File.join(dir, "out.mrb.env.rb")
       File.write(env_file, "ENV['FUNICULAR_ENV'] = 'test'\n")
       compiler.instance_variable_set(:@env_file, env_file)
@@ -185,7 +185,7 @@ class CompilerTest < Minitest::Test
       messages = []
       fake_logger = Object.new
       fake_logger.define_singleton_method(:info) { |m| messages << m }
-      compiler = prepared_compiler(dir, node: "/bin/true")
+      compiler = prepared_compiler(dir, node: "true")
       compiler.instance_variable_set(:@logger, fake_logger)
 
       compiler.send(:compile_to_mrb)

@@ -1,3 +1,13 @@
+## Unreleased
+
+### Added
+
+- Experimental vendor-neutral instrumentation API with failure-isolated
+  adapters, browser/SSR context propagation, framework and HTTP spans, and
+  privacy-safe built-in attributes.
+- Plugin packages may separate PicoRuby sources under `mrblib/`, Rails code
+  under `lib/`, and browser JavaScript under `assets/*.js`.
+
 ## [0.5.0] - 2026-08-13
 
 The local database release: an ActiveRecord-like, reactive local store on

@@ -32,6 +32,8 @@ module Funicular
         runtime
         view_context
         debug
+        instrumentation
+        instrumentation_events
         component
         error_boundary
         router

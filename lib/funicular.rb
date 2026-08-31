@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "funicular/version"
+require File.expand_path("../mrblib/instrumentation", __dir__)
 require_relative "funicular/configuration"
 require_relative "funicular/session_epoch"
 require_relative "funicular/compiler"

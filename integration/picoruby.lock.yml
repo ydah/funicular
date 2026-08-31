@@ -1,0 +1,24 @@
+schema_version: 1
+dependency:
+  name: picoruby
+  repository: https://github.com/ydah/picoruby.git
+  integration_branch: integration
+  revision: 0277264982a9262e1f66f6d215aaf85db7a40cef
+artifacts:
+  version_file: lib/funicular/vendor/picoruby/VERSION
+  revision_file: lib/funicular/vendor/picoruby/REVISION
+  sha256:
+    lib/funicular/vendor/mrbc/VERSION: 056224f51201ea92ff0550c523b936505df28451edd4d0b096919b5713ec93fb
+    lib/funicular/vendor/mrbc/mrbc.js: 501f3bb4acbd03e17332f7516fa46323d1e2f010704222008f0d9edc904d33e3
+    lib/funicular/vendor/mrbc/mrbc.wasm: ca7533ea449ed3f22c88ea823df52fee406e83e014de1513a2e893c10ca7ec87
+    lib/funicular/vendor/picoruby-test-node/VERSION: 056224f51201ea92ff0550c523b936505df28451edd4d0b096919b5713ec93fb
+    lib/funicular/vendor/picoruby-test-node/picoruby.js: 2c8bb3ca46226d118a977fc2556232cd0d32ca08a83ca2b8226f89e6618bde6b
+    lib/funicular/vendor/picoruby-test-node/picoruby.wasm: 5e24879f4f40dfd4d864a06e94f3b67f0f19a13f9bdbfacea0aabbfbabf9d529
+    lib/funicular/vendor/picoruby/REVISION: 4ef7c8b4f7d13f40d717cde538230fbe39870848b7d29f81facc4ba5902c69ad
+    lib/funicular/vendor/picoruby/VERSION: 056224f51201ea92ff0550c523b936505df28451edd4d0b096919b5713ec93fb
+    lib/funicular/vendor/picoruby/debug/init.iife.js: 2c04422bd6ba1e2506aa1f48b3b379263125170618ac3462807e84711e489a2e
+    lib/funicular/vendor/picoruby/debug/picoruby.js: 3e8c624b05ab42f532c666bef5a5c0924d722dea9c32d1a512f459e1f15723c3
+    lib/funicular/vendor/picoruby/debug/picoruby.wasm: e6dce48dd5271d4e5f9e6b916cd936c21a677cb33ff20ce44c830f9691fc781e
+    lib/funicular/vendor/picoruby/dist/init.iife.js: 2c04422bd6ba1e2506aa1f48b3b379263125170618ac3462807e84711e489a2e
+    lib/funicular/vendor/picoruby/dist/picoruby.js: 5863c08c7fcd354da34d6b81000f2e8396f180acd4061c0a951f7a88223da910
+    lib/funicular/vendor/picoruby/dist/picoruby.wasm: 7501d3571b396d3ddeab5b1a9a6e1a7932bfb82df4c18acfd357b90de4ba452f

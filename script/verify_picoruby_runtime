@@ -1,0 +1,51 @@
+#!/usr/bin/env ruby
+# frozen_string_literal: true
+
+require "digest"
+require "pathname"
+require "yaml"
+
+ROOT = File.expand_path("..", __dir__)
+LOCK_PATH = File.join(ROOT, "integration/picoruby.lock.yml")
+SHA_PATTERN = /\A[0-9a-f]{40}\z/
+
+def resolve_path(relative)
+  abort "invalid artifact path: #{relative.inspect}" unless relative.is_a?(String)
+  abort "artifact path must be relative: #{relative}" if Pathname.new(relative).absolute?
+
+  path = File.expand_path(relative, ROOT)
+  abort "artifact path escapes repository: #{relative}" unless path.start_with?("#{ROOT}/")
+  path
+end
+
+lock = YAML.safe_load_file(LOCK_PATH, aliases: false)
+abort "unsupported lock schema" unless lock["schema_version"] == 1
+
+dependency = lock.fetch("dependency")
+abort "unexpected dependency" unless dependency["name"] == "picoruby"
+revision = dependency.fetch("revision")
+abort "revision must be a lowercase 40-character SHA" unless revision.is_a?(String) && revision.match?(SHA_PATTERN)
+
+artifacts = lock.fetch("artifacts")
+version_file = resolve_path(artifacts.fetch("version_file"))
+revision_file = resolve_path(artifacts.fetch("revision_file"))
+abort "missing VERSION: #{version_file}" unless File.file?(version_file)
+abort "lock and REVISION differ" unless File.read(revision_file).strip == revision
+
+hashes = artifacts.fetch("sha256")
+abort "artifact SHA-256 list is empty" unless hashes.is_a?(Hash) && !hashes.empty?
+
+actual_files = Dir.glob(File.join(ROOT, "lib/funicular/vendor/{mrbc,picoruby,picoruby-test-node}/**/*"))
+                  .select { |path| File.file?(path) }
+                  .map { |path| Pathname.new(path).relative_path_from(Pathname.new(ROOT)).to_s }
+                  .sort
+expected_files = hashes.keys.sort
+abort "artifact file list differs from lock" unless actual_files == expected_files
+
+hashes.each do |relative, expected|
+  abort "invalid SHA-256 for #{relative}" unless expected.is_a?(String) && expected.match?(/\A[0-9a-f]{64}\z/)
+  actual = Digest::SHA256.file(resolve_path(relative)).hexdigest
+  abort "artifact digest mismatch: #{relative}" unless actual == expected
+end
+
+puts "PicoRuby runtime verified: #{revision}"

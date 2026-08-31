@@ -3,10 +3,11 @@
 module Funicular
   class Middleware
     class << self
-      attr_accessor :last_mtime, :compiling, :mutex
+      attr_accessor :last_mtime, :source_snapshot, :compiling, :mutex
 
       def reset!
         @last_mtime = nil
+        @source_snapshot = nil
         @compiling = false
         @mutex = Mutex.new
       end
@@ -34,15 +35,16 @@ module Funicular
 
     def recompile_if_needed
       current_mtime = latest_source_mtime
+      current_snapshot = source_snapshot
 
       # Skip if already compiling or if no changes detected
       return if self.class.compiling
-      return if self.class.last_mtime && current_mtime <= self.class.last_mtime
+      return if sources_unchanged?(current_mtime, current_snapshot)
 
       self.class.mutex.synchronize do
         # Double-check inside the lock
         return if self.class.compiling
-        return if self.class.last_mtime && current_mtime <= self.class.last_mtime
+        return if sources_unchanged?(current_mtime, current_snapshot)
 
         self.class.compiling = true
       end
@@ -61,6 +63,7 @@ module Funicular
           compiler.compile
         end
         self.class.last_mtime = current_mtime
+        self.class.source_snapshot = current_snapshot
         invalidate_asset_pipeline_cache
       rescue => e
         Rails.logger.error "Funicular compilation failed: #{e.message}"
@@ -93,12 +96,23 @@ module Funicular
     end
 
     def latest_source_mtime
+      snapshot = source_snapshot
+      return Time.at(0) if snapshot.empty?
+
+      Time.at(snapshot.map { |_path, mtime| mtime }.max)
+    end
+
+    def source_snapshot
       source_files = Dir.glob(File.join(@source_dir, "**", "*.rb"))
       plugin_files = plugin_source_files
-      all_files = source_files + plugin_files
-      return Time.at(0) if all_files.empty?
+      (source_files + plugin_files).sort.map { |file| [file, File.mtime(file).to_f] }
+    end
 
-      all_files.map { |f| File.mtime(f) }.max
+    def sources_unchanged?(current_mtime, current_snapshot)
+      previous = self.class.source_snapshot
+      return previous == current_snapshot if previous
+
+      self.class.last_mtime && current_mtime <= self.class.last_mtime
     end
 
     def build_plugins
@@ -115,7 +129,7 @@ module Funicular
 
     def plugin_source_files
       registry = Plugin::Registry.new(Rails.root)
-      registry.local_source_files + registry.specs.flat_map { |spec| spec.css_paths.map(&:to_s) }
+      registry.local_source_files + registry.specs.flat_map { |spec| spec.asset_paths.map(&:to_s) }
     rescue Plugin::Error
       []
     end

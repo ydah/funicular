@@ -24,6 +24,11 @@ The same `mrblib/` code also runs under CRuby during SSR (see below), so it must
 stay free of browser-only calls on any server code path
 (`Funicular.server?` is true there).
 
+The vendor-neutral instrumentation kernel in `mrblib/instrumentation.rb`
+dispatches bounded, privacy-safe spans and events to optional adapters. It owns
+context and failure isolation, but never exports or persists telemetry. See
+[`instrumentation.md`](instrumentation.md) for its public contract.
+
 ## `mrblib/` runtime: responsibilities
 
 | File(s)                                                 | Responsibility                                                                                  |

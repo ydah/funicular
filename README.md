@@ -60,7 +60,8 @@ User documentation is hosted on **picoruby.org**:
 - [Getting Started with Funicular](https://picoruby.org/funicular) — a standalone, no-Rails tutorial
 - [Funicular on Rails](https://picoruby.org/funicular-on-rails-quick-chat) — quick tutorial, installation, the asset pipeline, and a feature-by-feature tutorial plus reference (components, routing, forms and validation, data fetching, stores, SSR, styling, debugging)
 
-For contributors working on the gem itself, see [docs/architecture.md](docs/architecture.md).
+For plugin authors, see [docs/plugin.md](docs/plugin.md). For contributors
+working on the gem itself, see [docs/architecture.md](docs/architecture.md).
 
 ## Development
 
