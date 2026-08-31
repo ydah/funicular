@@ -54,8 +54,8 @@ namespace :funicular do
     end
   end
 
-  desc "Install Funicular debug assets, PicoRuby.wasm artifacts, and test support into a Rails app"
-  task install: ["install:debug_assets", "install:wasm", "install:test"] do
+  desc "Install Funicular debug assets, the gem initializer, PicoRuby.wasm artifacts, and test support into a Rails app"
+  task install: ["install:debug_assets", "install:initializer", "install:wasm", "install:test"] do
     puts ""
     puts "All Funicular assets installed."
     puts ""
@@ -79,32 +79,39 @@ namespace :funicular do
   end
 
   namespace :install do
-    desc "Install Funicular debug JS/CSS assets and the gem initializer"
+    desc "Install Funicular debug JS/CSS assets"
     task :debug_assets do
       require "fileutils"
 
-      javascripts_dir  = Rails.root.join("app", "assets", "javascripts")
-      stylesheets_dir  = Rails.root.join("app", "assets", "stylesheets")
-      initializers_dir = Rails.root.join("config", "initializers")
+      javascripts_dir = Rails.root.join("app", "assets", "javascripts")
+      stylesheets_dir = Rails.root.join("app", "assets", "stylesheets")
 
       FileUtils.mkdir_p(javascripts_dir)
       FileUtils.mkdir_p(stylesheets_dir)
-      FileUtils.mkdir_p(initializers_dir)
 
-      source_js          = File.expand_path("../funicular/assets/funicular_debug.js", __dir__)
-      source_css         = File.expand_path("../funicular/assets/funicular_debug.css", __dir__)
-      source_initializer = File.expand_path("../funicular/assets/funicular.rb", __dir__)
+      source_js  = File.expand_path("../funicular/assets/funicular_debug.js", __dir__)
+      source_css = File.expand_path("../funicular/assets/funicular_debug.css", __dir__)
 
-      dest_js          = javascripts_dir.join("funicular_debug.js")
-      dest_css         = stylesheets_dir.join("funicular_debug.css")
-      dest_initializer = initializers_dir.join("funicular.rb")
+      dest_js  = javascripts_dir.join("funicular_debug.js")
+      dest_css = stylesheets_dir.join("funicular_debug.css")
 
-      FileUtils.cp(source_js,          dest_js)
-      FileUtils.cp(source_css,         dest_css)
+      FileUtils.cp(source_js,  dest_js)
+      FileUtils.cp(source_css, dest_css)
 
       puts "Installed Funicular debug assets:"
       puts "  - #{dest_js}"
       puts "  - #{dest_css}"
+    end
+
+    desc "Install the gem initializer (config/initializers/funicular.rb)"
+    task :initializer do
+      require "fileutils"
+
+      initializers_dir = Rails.root.join("config", "initializers")
+      FileUtils.mkdir_p(initializers_dir)
+
+      source_initializer = File.expand_path("../funicular/assets/funicular.rb", __dir__)
+      dest_initializer   = initializers_dir.join("funicular.rb")
 
       # The initializer belongs to the application once it exists:
       # re-running the installer must never clobber its configuration
@@ -113,6 +120,7 @@ namespace :funicular do
         puts "Skipped #{dest_initializer} (exists; delete it first to reinstall the template)"
       else
         FileUtils.cp(source_initializer, dest_initializer)
+        puts "Installed Funicular initializer:"
         puts "  - #{dest_initializer}"
       end
     end
