@@ -42,4 +42,22 @@ class BootInstrumentationTest < Minitest::Test
     assert_equal "started", span.attributes["funicular.boot.result"]
     assert_equal :ok, span.status
   end
+
+  def test_server_start_survives_filter_change_before_span_creation
+    checks = 0
+    adapter = Object.new
+    adapter.define_singleton_method(:enabled?) do |_name|
+      checks += 1
+      checks == 1
+    end
+    Funicular::Instrumentation.unregister(:test)
+    Funicular::Instrumentation.register(:test, adapter)
+
+    result = Funicular.start do |router|
+      router.get("/", to: Class.new(Funicular::Component))
+    end
+
+    assert_instance_of Funicular::Router, result
+    assert_equal 2, checks
+  end
 end
