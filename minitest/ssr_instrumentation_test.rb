@@ -72,4 +72,40 @@ class SSRInstrumentationTest < Minitest::Test
     assert_equal :error, span.status
     assert_equal "component", span.attributes["funicular.ssr.mode"]
   end
+
+  def test_route_render_survives_filter_change_before_span_creation
+    checks = 0
+    adapter = Object.new
+    adapter.define_singleton_method(:enabled?) do |name|
+      next false unless name == "funicular.ssr.render"
+      checks += 1
+      checks == 1
+    end
+    Funicular::Instrumentation.unregister(:test)
+    Funicular::Instrumentation.register(:test, adapter)
+
+    result = Funicular::SSR.render(path: "/greet", source_dir: APP_DIR)
+
+    assert_includes result[:html], "Default Title"
+    assert_equal 2, checks
+  end
+
+  def test_component_render_survives_filter_failure_before_span_creation
+    checks = 0
+    adapter = Object.new
+    adapter.define_singleton_method(:enabled?) do |name|
+      next false unless name == "funicular.ssr.render"
+      checks += 1
+      raise "broken filter" if checks == 2
+      true
+    end
+    Funicular::Instrumentation.unregister(:test)
+    Funicular::Instrumentation.register(:test, adapter)
+    Funicular::Instrumentation.reporter = ->(_message) {}
+
+    html = Funicular::SSR.render_component("GreetingComponent", source_dir: APP_DIR)
+
+    assert_includes html, "Default Title"
+    assert_equal 2, checks
+  end
 end

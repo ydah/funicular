@@ -265,8 +265,8 @@ module Funicular
       result = __start_uninstrumented(
         component_class, container: container, props: props, hydrate: hydrate, &block
       )
-      span.attributes["funicular.boot.result"] = result ? "started" : "aborted"
-      if local_database
+      span.attributes["funicular.boot.result"] = result ? "started" : "aborted" if span
+      if span && local_database
         span.attributes["funicular.durability"] = Funicular::DB.durability.to_s
       end
       result

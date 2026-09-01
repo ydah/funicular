@@ -31,8 +31,8 @@ module Funicular
         "funicular.ssr.render", nil, { "funicular.ssr.mode" => "route" }
       ) do |span|
         result = render_route(path, state, props)
-        span.attributes["funicular.route.matched"] = !result[:component].nil?
-        if result[:component]
+        span.attributes["funicular.route.matched"] = !result[:component].nil? if span
+        if span && result[:component]
           span.attributes["funicular.component.class"] = result[:component].to_s
         end
         result
@@ -74,7 +74,7 @@ module Funicular
         "funicular.ssr.render", nil, { "funicular.ssr.mode" => "component" }
       ) do |span|
         html, component_class = render_named_component(component_name, props, state, with_class: true)
-        span.attributes["funicular.component.class"] = component_class.to_s
+        span.attributes["funicular.component.class"] = component_class.to_s if span
         html
       end
     end
