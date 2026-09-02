@@ -10,6 +10,23 @@ Rake::TestTask.new(:test) do |t|
 end
 
 namespace :test do
+  desc "Run the instrumentation contract under the vendored PicoRuby runtime"
+  task :pico do
+    require_relative "lib/funicular/testing"
+
+    result = Funicular::Testing.run!(
+      app_root: __dir__,
+      source_dir: File.join(__dir__, "mrblib"),
+      test_glob: "test/instrumentation_test.rb",
+      timeout_ms: 10_000
+    )
+    puts result.output unless result.output.empty?
+    puts result.picotest_summary
+    unless result.success? && result.picotest_test_count.positive?
+      abort "PicoRuby instrumentation tests failed"
+    end
+  end
+
   desc "Run the test suite with SimpleCov coverage measurement (report in coverage/)"
   task :coverage do
     ENV["COVERAGE"] = "1"

@@ -1,0 +1,53 @@
+module Funicular
+  type instrumentation_value = String | Integer | Float | bool | nil
+  type instrumentation_attributes = Hash[String, instrumentation_value]
+
+  module Instrumentation
+    SCHEMA_VERSION: Integer
+    FAILURE_LIMIT: Integer
+
+    def self.clock=: (^() -> Integer clock) -> ^() -> Integer
+    def self.reporter=: (^(String) -> void reporter) -> ^(String) -> void
+
+    class Span
+      attr_reader id: Integer
+      attr_reader parent_id: Integer?
+      attr_reader name: String
+      attr_reader target: untyped
+      attr_reader started_at_us: Integer
+      attr_reader attributes: instrumentation_attributes
+      attr_reader adapter_states: Hash[Symbol, untyped]
+      attr_reader ended_at_us: Integer?
+      attr_reader status: Symbol?
+      attr_reader error: Exception?
+
+      def finished?: () -> bool
+      def adapter_state: (Symbol name) -> untyped
+    end
+
+    class Event
+      attr_reader sequence: Integer
+      attr_reader name: String
+      attr_reader target: untyped
+      attr_reader occurred_at_us: Integer
+      attr_reader attributes: instrumentation_attributes
+      attr_reader parent_id: Integer?
+    end
+
+    def self.register: (Symbol name, untyped adapter) -> untyped
+    def self.unregister: (Symbol name) -> nil
+    def self.registered?: (Symbol name) -> bool
+    def self.enabled?: (?String? event_name) -> bool
+    def self.start: (String name, ?untyped target, ?instrumentation_attributes? attributes) -> Span?
+    def self.finish: (Span? span, ?instrumentation_attributes? attributes, ?error: Exception?) -> Span?
+    def self.instrument: [T] (String name, ?untyped target, ?instrumentation_attributes? attributes) { (Span?) -> T } -> T
+    def self.event: (String name, ?untyped target, ?instrumentation_attributes? attributes) -> Event?
+    def self.current_span: () -> Span?
+    def self.with_span: [T] (Span? span) { () -> T } -> T
+    def self.silence: [T] () { () -> T } -> T
+    def self.inject_http_headers: (Span? span, Hash[String, String] headers, ?String? url) -> Hash[String, String]
+    def self.flush: () -> nil
+    def self.shutdown: () -> nil
+    def self.diagnostics: () -> Array[Hash[Symbol, untyped]]
+  end
+end

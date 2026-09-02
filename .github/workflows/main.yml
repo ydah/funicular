@@ -27,3 +27,14 @@ jobs:
           bundler-cache: true
       - name: Run the default task
         run: bundle exec rake
+      - name: Record instrumentation benchmark
+        run: OUTPUT=tmp/instrumentation-benchmark.json bundle exec ruby benchmark/instrumentation.rb
+      - name: Upload instrumentation benchmark
+        uses: actions/upload-artifact@v4
+        with:
+          name: instrumentation-benchmark-ruby-${{ matrix.ruby }}
+          path: tmp/instrumentation-benchmark.json
+      - name: Install PicoRuby test DOM
+        run: npm install --no-save jsdom@26.1.0
+      - name: Run PicoRuby instrumentation contract
+        run: bundle exec rake test:pico

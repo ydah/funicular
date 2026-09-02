@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require_relative "funicular/version"
+require_relative "../mrblib/instrumentation"
 require_relative "funicular/configuration"
 require_relative "funicular/session_epoch"
 require_relative "funicular/compiler"
