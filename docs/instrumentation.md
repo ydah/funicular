@@ -50,16 +50,44 @@ is backward-compatible within v1. Removing a field, changing its meaning, or
 changing its type requires a schema-version increment. Adapters must ignore
 unknown fields and reject or stop exporting unknown major schema versions.
 
+Built-in spans are `funicular.boot`, `funicular.navigation`,
+`funicular.component.mount`, `funicular.component.hydrate`,
+`funicular.component.update`, `funicular.component.render`,
+`funicular.vdom.diff`, `funicular.dom.patch`, `funicular.events.rebind`, and
+`funicular.ssr.render`. Events are `funicular.hydration.fallback` and
+`funicular.error`.
+
+| Operation | Attributes |
+| --- | --- |
+| boot | `funicular.local_database.enabled`, `funicular.boot.result`, `funicular.durability` |
+| navigation | `funicular.navigation.kind`, `funicular.component.class`, `funicular.route.matched`, `funicular.route.pattern` |
+| component mount | `funicular.component.class`, `funicular.component.child_count` |
+| component hydrate | `funicular.component.class`, `funicular.hydration.result` |
+| component update | `funicular.component.class`, `funicular.update.reason`, `funicular.update.changed_key_count`, `funicular.diff.empty`, `funicular.patch.count` |
+| component render | `funicular.component.class` |
+| VDOM diff | `funicular.component.class`, `funicular.diff.empty`, `funicular.patch.count` |
+| DOM patch | `funicular.component.class`, `funicular.patch.count`, `funicular.root.replaced` |
+| event rebind | `funicular.component.class`, `funicular.events.phase`, `funicular.event_listener.count` |
+| SSR | `funicular.ssr.mode`, `funicular.component.class`, `funicular.route.matched` |
+| hydration fallback | `error.type` |
+| error event | `funicular.error.source`, `error.type` |
+
+Hydration results are `reused`, `full_render_fallback`, and
+`failed_then_remounted`. Rebind emits separate `cleanup` and `bind` spans in
+`funicular.events.phase`; listener count appears only on a successful bind.
+
 Attribute keys must be strings. Values are limited to strings, integers,
 floats, booleans, and `nil`. Built-in instrumentation never records state,
 props, form values, raw URLs, query strings, HTTP bodies, cookies, tokens,
-session identifiers, SQL, Cable payloads, DOM text, or error messages.
+session identifiers, SQL, Cable payloads, DOM text, or error messages. Route
+attributes use declared route patterns only.
 
 HTTP adapters may add propagation headers through `inject_http_headers`.
 Existing headers win case-insensitively, and the raw URL is supplied only for
 the adapter's origin allowlist decision; it is not attached to the span.
 
-With no matching adapter, Funicular skips clock reads and span/event allocation.
+With no matching adapter, Funicular skips clock reads, span/event allocation,
+attribute hashes in framework hot paths, and patch-count traversal.
 
 Run `bundle exec ruby benchmark/instrumentation.rb` to compare the no-adapter
 and no-op-adapter update boundary. Run `bundle exec rake test:pico` after

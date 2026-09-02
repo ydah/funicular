@@ -212,7 +212,7 @@ module Funicular
         # (component_will_update/component_updated/component_raised),
         # normalizes values, and re-renders. The bus's next-tick
         # delivery guarantees we are never inside another update here.
-        patch(key => records)
+        with_update_reason(:watch) { patch(key => records) }
       else
         # Before mount there is no update lifecycle to honor yet: land
         # the initial data directly so state is ready for the first
@@ -272,9 +272,9 @@ module Funicular
         @suspense_errors[name] = nil
         if on_resolve
           # on_resolve callback is expected to call patch() which triggers re-render
-          instance_exec(data, &on_resolve)
+          with_update_reason(:suspense_resolve) { instance_exec(data, &on_resolve) }
         else
-          re_render if @mounted
+          re_render(reason: :suspense_resolve) if @mounted
         end
       }
 
@@ -300,7 +300,7 @@ module Funicular
         @suspense_data[name] = nil
         @suspense_states[name] = :rejected
         @suspense_errors[name] = error
-        re_render if @mounted
+        re_render(reason: :suspense_reject) if @mounted
       }
 
       # Execute loader with resolve/reject callbacks
@@ -420,6 +420,22 @@ module Funicular
 
     # Update state and trigger re-render
     def patch(new_state)
+      apply_state_patch(new_state, @update_reason || :state_patch)
+    end
+
+    private
+
+    def with_update_reason(reason)
+      previous_reason = @update_reason
+      @update_reason = reason
+      begin
+        yield
+      ensure
+        @update_reason = previous_reason
+      end
+    end
+
+    def apply_state_patch(new_state, reason)
       return unless @mounted
       return if @updating
 
@@ -435,7 +451,7 @@ module Funicular
 
         @state = @state.merge(normalized_state)
         @state_accessor = nil  # Invalidate accessor to reflect new state
-        re_render
+        re_render(reason: reason, changed_key_count: new_state.size)
 
         component_updated if respond_to?(:component_updated)
       rescue => e
@@ -446,10 +462,22 @@ module Funicular
       end
     end
 
+    public
+
     # Mount component to a DOM container
     def mount(container)
       return if @mounted
+      return perform_mount(container) unless Instrumentation.enabled?(Instrumentation::Events::COMPONENT_MOUNT)
 
+      attributes = { "funicular.component.class" => self.class.to_s }
+      Instrumentation.instrument(Instrumentation::Events::COMPONENT_MOUNT, self, attributes) do |span|
+        perform_mount(container, span)
+      end
+    end
+
+    private
+
+    def perform_mount(container, span = nil)
       begin
         component_will_mount if respond_to?(:component_will_mount)
 
@@ -472,7 +500,9 @@ module Funicular
           child.component_mounted if child.respond_to?(:component_mounted)
         end
 
-        component_mounted if respond_to?(:component_mounted)
+        result = component_mounted if respond_to?(:component_mounted)
+        span.attributes["funicular.component.child_count"] = @child_components.length if span
+        result
       rescue => e
         # A failed mount never reaches unmount (@mounted is still
         # false), so watch subscriptions taken before/during the mount
@@ -483,6 +513,8 @@ module Funicular
       end
     end
 
+    public
+
     # Hydrate this component against server-rendered DOM.
     #
     # Unlike mount, which builds a fresh DOM tree via VDOM::Renderer, hydrate
@@ -491,9 +523,19 @@ module Funicular
     # and refs (plus wiring child components). The first client render must
     # match the server HTML, which is why state is seeded from
     # window.__FUNICULAR_STATE__ before calling this.
-    def hydrate(dom_element)
+    def hydrate(dom_element, router_fallback = false)
       return if @mounted
+      return perform_hydrate(dom_element) unless Instrumentation.enabled?(Instrumentation::Events::COMPONENT_HYDRATE)
 
+      attributes = { "funicular.component.class" => self.class.to_s }
+      Instrumentation.instrument(Instrumentation::Events::COMPONENT_HYDRATE, self, attributes) do |span|
+        perform_hydrate(dom_element, span, router_fallback)
+      end
+    end
+
+    private
+
+    def perform_hydrate(dom_element, span = nil, router_fallback = false)
       begin
         # Inside the begin so a nil element takes the same cleanup path
         # (releasing watch subscriptions) as every other hydrate failure.
@@ -517,13 +559,16 @@ module Funicular
           bind_events(dom_element, new_vdom)
           collect_refs(dom_element, new_vdom)
           collect_child_components(new_vdom)
+          span.attributes["funicular.hydration.result"] = "reused" if span
         else
           # Server and client disagree on structure (nondeterministic render or
           # stale state). Recover by discarding the server DOM and rendering a
           # fresh tree, the same way mount does. The page stays usable; only the
           # first-paint reuse is lost for this subtree.
           warn_hydration_mismatch(new_vdom, dom_element)
+          hydration_fallback_event("structural_mismatch")
           @dom_element = full_render_fallback(new_vdom, dom_element)
+          span.attributes["funicular.hydration.result"] = "full_render_fallback" if span
         end
 
         @vdom = new_vdom
@@ -540,6 +585,9 @@ module Funicular
 
         component_mounted if respond_to?(:component_mounted)
       rescue => e
+        if span && router_fallback
+          span.attributes["funicular.hydration.result"] = "failed_then_remounted"
+        end
         # Same as mount: a failed hydrate cannot be unmounted, so the
         # watch subscriptions must not outlive it.
         cleanup_watches
@@ -547,6 +595,8 @@ module Funicular
         raise e
       end
     end
+
+    public
 
     # Navigation guard: return a String message to ask the user for
     # confirmation before this component is navigated away from (router
@@ -616,7 +666,12 @@ module Funicular
       @rendering = true
       @current_children = nil
       begin
-        result = render
+        result = if Instrumentation.enabled?(Instrumentation::Events::COMPONENT_RENDER)
+          attributes = { "funicular.component.class" => self.class.to_s }
+          Instrumentation.instrument(Instrumentation::Events::COMPONENT_RENDER, self, attributes) { render }
+        else
+          render
+        end
       ensure
         @rendering = previous_rendering
         @current_children = previous_children
@@ -915,23 +970,94 @@ module Funicular
     end
 
     # Re-render component (called by update)
-    def re_render
+    def re_render(reason: :unknown, changed_key_count: nil)
       return unless @mounted
+      return perform_re_render unless Instrumentation.enabled?(Instrumentation::Events::COMPONENT_UPDATE)
 
+      attributes = {
+        "funicular.component.class" => self.class.to_s,
+        "funicular.update.reason" => reason.to_s
+      }
+      attributes["funicular.update.changed_key_count"] = changed_key_count if changed_key_count
+      Instrumentation.instrument(Instrumentation::Events::COMPONENT_UPDATE, self, attributes) do |span|
+        perform_re_render(span)
+      end
+    end
+
+    def perform_re_render(update_span = nil)
       new_vdom = build_vdom
-      patches = VDOM::Differ.diff(@vdom, new_vdom)
-
-      # Always cleanup and rebind events to avoid stale event listeners
-      cleanup_events
-
-      unless patches.empty?
-        new_dom_element = VDOM::Patcher.new(nil, @runtime).apply(@dom_element, patches)
-        # apply returns JS::Object (it must accept text-node patches), but
-        # the component's root is always an Element. Narrow to JS::Element.
-        @dom_element = new_dom_element if new_dom_element.is_a?(JS::Element)
+      patch_count = nil
+      if Instrumentation.enabled?(Instrumentation::Events::VDOM_DIFF)
+        attributes = { "funicular.component.class" => self.class.to_s }
+        patches = Instrumentation.instrument(Instrumentation::Events::VDOM_DIFF, self, attributes) do |span|
+          result = VDOM::Differ.diff(@vdom, new_vdom)
+          patch_count = instrumentation_patch_count(result)
+          if span
+            span.attributes["funicular.diff.empty"] = result.empty?
+            span.attributes["funicular.patch.count"] = patch_count
+          end
+          result
+        end
+      else
+        patches = VDOM::Differ.diff(@vdom, new_vdom)
       end
 
-      bind_events(@dom_element, new_vdom)
+      patch_enabled = !patches.empty? && Instrumentation.enabled?(Instrumentation::Events::DOM_PATCH)
+      patch_count ||= instrumentation_patch_count(patches) if update_span || patch_enabled
+      if update_span
+        update_span.attributes["funicular.diff.empty"] = patches.empty?
+        update_span.attributes["funicular.patch.count"] = patch_count
+      end
+
+      # Always cleanup and rebind events to avoid stale event listeners.
+      rebind_enabled = Instrumentation.enabled?(Instrumentation::Events::EVENTS_REBIND)
+      if rebind_enabled
+        attributes = {
+          "funicular.component.class" => self.class.to_s,
+          "funicular.events.phase" => "cleanup"
+        }
+        Instrumentation.instrument(Instrumentation::Events::EVENTS_REBIND, self, attributes) do
+          cleanup_events
+        end
+      else
+        cleanup_events
+      end
+
+      unless patches.empty?
+        old_dom_element = @dom_element
+        if patch_enabled
+          attributes = {
+            "funicular.component.class" => self.class.to_s,
+            "funicular.patch.count" => patch_count
+          }
+          Instrumentation.instrument(Instrumentation::Events::DOM_PATCH, self, attributes) do |span|
+            new_dom_element = VDOM::Patcher.new(nil, @runtime).apply(@dom_element, patches)
+            span.attributes["funicular.root.replaced"] = new_dom_element != old_dom_element if span
+            # apply returns JS::Object (it must accept text-node patches), but
+            # the component's root is always an Element. Narrow to JS::Element.
+            @dom_element = new_dom_element if new_dom_element.is_a?(JS::Element)
+          end
+        else
+          new_dom_element = VDOM::Patcher.new(nil, @runtime).apply(@dom_element, patches)
+          # apply returns JS::Object (it must accept text-node patches), but
+          # the component's root is always an Element. Narrow to JS::Element.
+          @dom_element = new_dom_element if new_dom_element.is_a?(JS::Element)
+        end
+      end
+
+      if rebind_enabled
+        attributes = {
+          "funicular.component.class" => self.class.to_s,
+          "funicular.events.phase" => "bind"
+        }
+        Instrumentation.instrument(Instrumentation::Events::EVENTS_REBIND, self, attributes) do |span|
+          bind_events(@dom_element, new_vdom)
+          span.attributes["funicular.event_listener.count"] = @event_listeners.length if span
+        end
+      else
+        bind_events(@dom_element, new_vdom)
+      end
+
       collect_refs(@dom_element, new_vdom)
       collect_child_components(new_vdom)
 
@@ -944,6 +1070,36 @@ module Funicular
       end
 
       @vdom = new_vdom
+    end
+
+    def instrumentation_patch_count(patches)
+      count = 0
+      patches.each do |patch|
+        case patch[0]
+        when Integer
+          count += instrumentation_patch_count(patch[1])
+        when :keyed_children
+          patch[1].each do |operation|
+            count += operation[0] == :insert ? 1 : instrumentation_patch_count(operation[3])
+          end
+          count += patch[2].length
+        when :update_and_rebind
+          count += 1 + instrumentation_patch_count(patch[2])
+        else
+          count += 1
+        end
+      end
+      count
+    end
+
+    def hydration_fallback_event(error_type)
+      return unless Instrumentation.enabled?(Instrumentation::Events::HYDRATION_FALLBACK)
+
+      attributes = {
+        "funicular.component.class" => self.class.to_s,
+        "error.type" => error_type.to_s
+      }
+      Instrumentation.event(Instrumentation::Events::HYDRATION_FALLBACK, self, attributes)
     end
 
     # Add data-component attribute to the root element

@@ -23,6 +23,24 @@ module Funicular
     def self.render(path:, state: {}, props: {}, source_dir: nil)
       Runtime.boot!(source_dir || default_source_dir)
 
+      unless Funicular::Instrumentation.enabled?("funicular.ssr.render")
+        return render_route(path, state, props)
+      end
+
+      Funicular::Instrumentation.instrument(
+        "funicular.ssr.render", nil, { "funicular.ssr.mode" => "route" }
+      ) do |span|
+        result = render_route(path, state, props)
+        span.attributes["funicular.route.matched"] = !result[:component].nil? if span
+        if span && result[:component]
+          span.attributes["funicular.component.class"] = result[:component].to_s
+        end
+        result
+      end
+    end
+
+    def self.render_route(path, state, props)
+
       router = Funicular.router
       raise "Funicular router is not configured; check app/funicular/initializer.rb" unless router
 
@@ -48,6 +66,21 @@ module Funicular
     def self.render_component(component_name, props: {}, state: {}, source_dir: nil)
       Runtime.boot!(source_dir || default_source_dir)
 
+      unless Funicular::Instrumentation.enabled?("funicular.ssr.render")
+        return render_named_component(component_name, props, state)
+      end
+
+      Funicular::Instrumentation.instrument(
+        "funicular.ssr.render", nil, { "funicular.ssr.mode" => "component" }
+      ) do |span|
+        html, component_class = render_named_component(component_name, props, state, with_class: true)
+        span.attributes["funicular.component.class"] = component_class.to_s if span
+        html
+      end
+    end
+
+    def self.render_named_component(component_name, props, state, with_class: false)
+
       router = Funicular.router
       raise "Funicular router is not configured; check app/funicular/initializer.rb" unless router
 
@@ -59,7 +92,8 @@ module Funicular
       instance = component_class.new(symbolize_keys(props))
       instance.runtime = Funicular::Runtime.new(router)
       instance.seed_state(state)
-      Funicular::VDOM::HTMLSerializer.serialize(instance.build_vdom, instance.runtime)
+      html = Funicular::VDOM::HTMLSerializer.serialize(instance.build_vdom, instance.runtime)
+      with_class ? [html, component_class] : html
     end
 
     def self.default_source_dir

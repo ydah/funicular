@@ -23,6 +23,7 @@ module Funicular
   def self.__settle_boot_barrier: (Array[untyped] errors) ?{ () -> void } -> nil
   def self.__boot_for_start: () -> bool
   def self.start: (?singleton(Component)? component_class, ?container: String | JS::Element, ?props: Hash[Symbol, untyped], ?hydrate: bool) ?{ (Router router) -> void } -> (Component | Router | nil)
+  def self.__start_uninstrumented: (?singleton(Component)? component_class, ?container: String | JS::Element, ?props: Hash[Symbol, untyped], ?hydrate: bool) ?{ (Router router) -> void } -> (Component | Router | nil)
   def self.configure_forms: () ?{ (Hash[Symbol, String]) -> void } -> void
   def self.form_builder_config: () -> Hash[Symbol, String]?
   def self.form_builder_config=: (Hash[Symbol, String] config) -> Hash[Symbol, String]

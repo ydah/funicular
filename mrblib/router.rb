@@ -79,7 +79,7 @@ module Funicular
       # popstate cannot cancel).
       @popstate_callback_id = JS.global.addEventListener('popstate') do |event|
         if leave_allowed?
-          handle_route_change
+          handle_route_change(:pop)
         elsif (guarded_path = @current_path)
           # Local binding: the type checker does not narrow ivars
           # through elsif.
@@ -104,7 +104,7 @@ module Funicular
         # Use replaceState to not add a new entry to the history
         JS.global.history.replaceState(JS::Bridge.to_js({}), '', @default_route)
       end
-      handle_route_change
+      handle_route_change(@hydrate_initial ? :hydrate_initial : :initial)
     end
 
     # Stop listening to popstate
@@ -129,7 +129,7 @@ module Funicular
       return unless leave_allowed?
       JS.global.history.pushState(JS::Bridge.to_js({}), '', path)
       # Manually trigger route change because pushState doesn't fire popstate
-      handle_route_change
+      handle_route_change(:push)
     end
 
     # Ask the current component's navigation guard whether leaving is
@@ -151,7 +151,16 @@ module Funicular
     private
 
     # Handle route change
-    def handle_route_change
+    def handle_route_change(kind = :initial)
+      return perform_route_change unless Instrumentation.enabled?(Instrumentation::Events::NAVIGATION)
+
+      attributes = { "funicular.navigation.kind" => kind.to_s }
+      Instrumentation.instrument(Instrumentation::Events::NAVIGATION, self, attributes) do |span|
+        perform_route_change(span)
+      end
+    end
+
+    def perform_route_change(navigation_span = nil)
       path = current_location_path
 
       # Hydration only applies to the very first navigation. Consume the flag
@@ -160,11 +169,19 @@ module Funicular
       @hydrate_initial = false
 
       # Find matching route
-      component_class, params = find_route(path)
+      route, params = find_route_definition(path)
+      component_class = route && route[:component]
 
       unless component_class
+        navigation_span.attributes["funicular.route.matched"] = false if navigation_span
         # Maybe render a 404 component?
         return
+      end
+
+      if navigation_span
+        navigation_span.attributes["funicular.route.matched"] = true
+        navigation_span.attributes["funicular.route.pattern"] = route[:path]
+        navigation_span.attributes["funicular.component.class"] = component_class.to_s
       end
 
       # Don't remount if already on this path
@@ -184,11 +201,12 @@ module Funicular
       if server_root
         begin
           @current_component.seed_state(Funicular.window_state)
-          @current_component.hydrate(server_root)
+          @current_component.hydrate(server_root, true)
           return
         rescue => e
           # Server/client disagreed: discard server DOM and render fresh.
           puts "[Funicular] Hydration failed, falling back to full render: #{e.message}"
+          hydration_fallback_event(component_class, e.class)
           @container[:innerHTML] = ''
           @current_component = component_class.new(params)
           @current_component.runtime = @runtime
@@ -273,6 +291,11 @@ module Funicular
     end
 
     def find_route(path)
+      route, params = find_route_definition(path)
+      [route && route[:component], params]
+    end
+
+    def find_route_definition(path)
       path_segments = path.split('/').reject { |s| s.empty? }
       params = {} #: Hash[Symbol, untyped]
 
@@ -302,10 +325,20 @@ module Funicular
           end
         end
 
-        return [route[:component], params] if match
+        return [route, params] if match
       end
 
       [nil, params] # No route found
+    end
+
+    def hydration_fallback_event(component_class, error_type)
+      return unless Instrumentation.enabled?(Instrumentation::Events::HYDRATION_FALLBACK)
+
+      attributes = {
+        "funicular.component.class" => component_class.to_s,
+        "error.type" => error_type.to_s
+      }
+      Instrumentation.event(Instrumentation::Events::HYDRATION_FALLBACK, self, attributes)
     end
   end
 end
