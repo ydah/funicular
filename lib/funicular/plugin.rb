@@ -21,9 +21,12 @@ module Funicular
         root.join("assets")
       end
 
-      def source_dir
-        root.join("lib")
+      def mruby_source_dir
+        mrblib = root.join("mrblib")
+        mrblib.directory? ? mrblib : root.join("lib")
       end
+
+      alias source_dir mruby_source_dir
 
       def source_files
         nested = Dir.glob(source_dir.join("*", "**", "*.rb").to_s).sort
@@ -33,6 +36,14 @@ module Funicular
 
       def css_paths
         Dir.glob(assets_dir.join("*.css").to_s).sort.map { |path| Pathname(path) }
+      end
+
+      def js_paths
+        Dir.glob(assets_dir.join("*.js").to_s).sort.map { |path| Pathname(path) }
+      end
+
+      def asset_paths
+        css_paths + js_paths
       end
     end
 
@@ -59,9 +70,17 @@ module Funicular
         project.css_paths
       end
 
+      def js_paths
+        project.js_paths
+      end
+
+      def asset_paths
+        project.asset_paths
+      end
+
       def validate!
         raise Error, "Missing Funicular plugin gem: #{root}" unless root.exist?
-        raise Error, "No Ruby source files found in #{project.source_dir}" if project.source_files.empty?
+        raise Error, "No Ruby source files found in #{project.mruby_source_dir}" if project.source_files.empty?
 
         self
       end
@@ -79,6 +98,7 @@ module Funicular
       end
 
       def sync_assets
+        asset_entries
         build_root = rails_root.join(BUILD_DIR)
         FileUtils.mkdir_p(build_root)
 
@@ -86,7 +106,7 @@ module Funicular
           target_dir = build_root.join(Plugin.safe_name(spec.name))
           FileUtils.rm_rf(target_dir)
           FileUtils.mkdir_p(target_dir)
-          spec.css_paths.each do |path|
+          spec.asset_paths.each do |path|
             FileUtils.cp(path, target_dir.join(File.basename(path))) if path.exist?
           end
         end
@@ -97,15 +117,24 @@ module Funicular
       end
 
       def asset_entries
-        validated_specs.flat_map do |spec|
+        entries = validated_specs.flat_map do |spec|
           safe_name = Plugin.safe_name(spec.name)
-          css = spec.css_paths.map { |path| File.basename(path) }
-          css.map { |file| { "type" => "css", "logical_path" => "funicular/plugins/#{safe_name}/#{file}" } }
+          [["css", spec.css_paths], ["js", spec.js_paths]].flat_map do |type, paths|
+            paths.map do |path|
+              { "type" => type, "logical_path" => "funicular/plugins/#{safe_name}/#{path.basename}" }
+            end
+          end
         end
+
+        duplicate = entries.map { |entry| entry["logical_path"] }.tally.find { |_path, count| count > 1 }
+        raise Error, "Duplicate Funicular plugin asset: #{duplicate.first}" if duplicate
+
+        entries
       end
 
       def validate!
-        specs.each(&:validate!)
+        asset_entries
+        specs
       end
 
       private
@@ -136,12 +165,21 @@ module Funicular
       end
 
       def validated_specs
-        specs.map(&:validate!)
+        validated = specs.map(&:validate!)
+        duplicate = validated.group_by { |spec| Plugin.safe_name(spec.name) }
+                             .find { |_name, matches| matches.length > 1 }
+        if duplicate
+          raise Error, "Duplicate Funicular plugin name: #{duplicate.first}"
+        end
+        validated
       end
     end
 
     def self.safe_name(name)
-      name.to_s.split("/").last.gsub(/[^a-zA-Z0-9]+/, "_").gsub(/\A_+|_+\z/, "").downcase
+      safe_name = name.to_s.split("/").last.to_s.gsub(/[^a-zA-Z0-9]+/, "_").gsub(/\A_+|_+\z/, "").downcase
+      raise Error, "Unsafe Funicular plugin name: #{name.inspect}" if safe_name.empty?
+
+      safe_name
     end
   end
 end

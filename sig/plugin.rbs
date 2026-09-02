@@ -1,0 +1,22 @@
+module Funicular
+  module Plugin
+    class Project
+      attr_reader root: Pathname
+
+      def initialize: (String | Pathname root) -> void
+      def assets_dir: () -> Pathname
+      def mruby_source_dir: () -> Pathname
+      def source_dir: () -> Pathname
+      def source_files: () -> Array[String]
+      def css_paths: () -> Array[Pathname]
+      def js_paths: () -> Array[Pathname]
+      def asset_paths: () -> Array[Pathname]
+    end
+
+    class Spec
+      def css_paths: () -> Array[Pathname]
+      def js_paths: () -> Array[Pathname]
+      def asset_paths: () -> Array[Pathname]
+    end
+  end
+end

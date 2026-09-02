@@ -14,6 +14,7 @@ require "funicular/helpers/picoruby_helper"
 class PicorubyHelperTest < Minitest::Test
   # Just enough ActionView plumbing for the helper's tag/raw/safe_join calls.
   class Harness
+    include ActionView::Helpers::AssetTagHelper
     include ActionView::Helpers::TagHelper
     include ActionView::Helpers::OutputSafetyHelper
     include Funicular::Helpers::PicorubyHelper
@@ -365,11 +366,54 @@ class PicorubyHelperTest < Minitest::Test
     end
   end
 
+  def test_plugin_include_tags_render_css_then_deferred_javascript
+    entries = [
+      { "type" => "css", "logical_path" => "funicular/plugins/example/theme.css" },
+      { "type" => "js", "logical_path" => "funicular/plugins/example/bridge.js" }
+    ]
+
+    with_plugin_entries(entries) do
+      html = @view.funicular_plugin_include_tags
+      assert_operator html.index("theme.css"), :<, html.index("bridge.js")
+      assert_includes html, 'data-funicular-plugin="example"'
+      assert_includes html, "defer"
+      refute_includes html, "application/x-mrb"
+    end
+  end
+
+  def test_unknown_plugin_asset_type_raises_in_production
+    Rails.env_name = "production"
+
+    with_plugin_entries([{ "type" => "wasm", "logical_path" => "funicular/plugins/example/file.wasm" }]) do
+      error = assert_raises(Funicular::Plugin::Error) { @view.funicular_plugin_include_tags }
+      assert_includes error.message, '"wasm"'
+    end
+  end
+
+  def test_plugin_asset_error_is_a_comment_outside_production
+    with_plugin_entries([{ "type" => "wasm", "logical_path" => "funicular/plugins/example/file.wasm" }]) do
+      html = @view.funicular_plugin_include_tags
+      assert_includes html, "Funicular plugin assets skipped:"
+      assert_includes html, "wasm"
+    end
+  end
+
   # --- base_css --------------------------------------------------------
 
   def test_base_css_is_read_once
     css = Funicular::Helpers::PicorubyHelper.base_css
     assert_kind_of String, css
     assert_same css, Funicular::Helpers::PicorubyHelper.base_css
+  end
+
+  private
+
+  def with_plugin_entries(entries, &block)
+    registry = Struct.new(:asset_entries).new(entries)
+    original = Funicular::Plugin::Registry.method(:new)
+    Funicular::Plugin::Registry.define_singleton_method(:new) { |_root| registry }
+    block.call
+  ensure
+    Funicular::Plugin::Registry.define_singleton_method(:new, original)
   end
 end
