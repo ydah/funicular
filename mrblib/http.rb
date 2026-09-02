@@ -72,6 +72,12 @@ module Funicular
       end
 
       def request(method, url, body, &block)
+        span = if Funicular::Instrumentation.enabled?("funicular.http.request")
+          Funicular::Instrumentation.start(
+            "funicular.http.request", nil, { "http.request.method" => method }
+          )
+        end
+
         # A terminal page must not TALK to the server either (docs
         # decision 13): discarding the response is not enough, because
         # the request itself would already have executed under the NEW
@@ -79,28 +85,32 @@ module Funicular
         # another user's data. Refused BEFORE the fetch; the callback
         # still settles exactly once.
         if Funicular::DB.session_terminated?
-          block.call(session_changed_response) if block
+          response = session_changed_response
+          finish_http_span(span, response, "session_terminated")
+          deliver_response(span, method, url, response, &block)
           return nil
         end
-        # @type var options: Hash[Symbol, String | Hash[String, String]]
-        options = { method: method, credentials: "include" }
-
-        headers = {} #: Hash[String, String]
-
-        if body
-          headers["Content-Type"] = "application/json"
-          options[:body] = JSON.generate(body)
-        end
-
-        if method != "GET"
-          token = csrf_token
-          headers["X-CSRF-Token"] = token if token
-        end
-
-        options[:headers] = headers unless headers.empty?
-
         settled = false
         begin
+          # @type var options: Hash[Symbol, String | Hash[String, String]]
+          options = { method: method, credentials: "include" }
+
+          headers = {} #: Hash[String, String]
+
+          if body
+            headers["Content-Type"] = "application/json"
+            options[:body] = JSON.generate(body)
+          end
+
+          if method != "GET"
+            token = csrf_token
+            headers["X-CSRF-Token"] = token if token
+          end
+
+          Funicular::Instrumentation.inject_http_headers(span, headers, url)
+
+          options[:headers] = headers unless headers.empty?
+
           JS.global.fetch(url, options) do |response|
             # The epoch decides BEFORE the body is touched. fetch
             # resolves once the headers arrive -- which is all this
@@ -115,14 +125,17 @@ module Funicular
               json_text = response.to_binary
               data = parse_response_body(json_text)
               http_response = Response.new(status, data)
+              result = "response"
             else
               # The session changed under this page (docs decision 13):
               # the response is DISCARDED, and the caller settles with
               # an error instead of applying stale-session data.
               http_response = session_changed_response
+              result = "session_changed"
             end
             settled = true
-            block.call(http_response) if block
+            finish_http_span(span, http_response, result)
+            deliver_response(span, method, url, http_response, &block)
           end
         rescue => e
           # Exactly-once settle: a rejected fetch (network failure,
@@ -135,16 +148,41 @@ module Funicular
           # handler otherwise just freezes the page in its loading
           # state.
           if settled
-            puts "[Funicular::HTTP] #{method} #{url} callback raised " \
-                 "#{e.class}: #{e.message}"
             raise e
           end
           settled = true
-          if block
-            block.call(Response.new(0,
-              { "error" => "network error: #{e.class}: #{e.message}" }))
+          response = Response.new(0,
+            { "error" => "network error: #{e.class}: #{e.message}" })
+          finish_http_span(span, response, "network_error", error: e)
+          deliver_response(span, method, url, response, &block)
+        end
+      end
+
+      def deliver_response(span, method, url, response, &block)
+        return unless block
+        Funicular::Instrumentation.with_span(span) do
+          begin
+            block.call(response)
+          rescue => error
+            Funicular::Instrumentation.event(
+              "funicular.error", nil,
+              { "funicular.error.source" => "http_callback",
+                "error.type" => error.class.to_s }
+            )
+            puts "[Funicular::HTTP] #{method} #{url} callback raised " \
+                 "#{error.class}: #{error.message}"
+            raise error
           end
         end
+      end
+
+      def finish_http_span(span, response, result, error: nil)
+        return unless span
+        attributes = {
+          "funicular.http.result" => result,
+          "http.response.status_code" => response.status
+        }
+        Funicular::Instrumentation.finish(span, attributes, error: error)
       end
 
       def session_changed_response

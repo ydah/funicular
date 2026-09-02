@@ -59,6 +59,12 @@ HTTP adapters may add propagation headers through `inject_http_headers`.
 Existing headers win case-insensitively, and the raw URL is supplied only for
 the adapter's origin allowlist decision; it is not attached to the span.
 
+`Funicular::HTTP` records `funicular.http.request` spans with
+`http.request.method`, `http.response.status_code`, and
+`funicular.http.result`. Application callbacks run with the request span as
+their current context. Callback failures emit `funicular.error` without being
+reclassified as network failures.
+
 With no matching adapter, Funicular skips clock reads and span/event allocation.
 
 Run `bundle exec ruby benchmark/instrumentation.rb` to compare the no-adapter
