@@ -242,6 +242,17 @@ class VDOMDifferTest < Picotest::Test
     assert_nil(removes[0][1].key)
   end
 
+  def test_diff_children_with_keys_removes_unmatched_raw_string
+    old_element = Funicular::VDOM::Element.new('div', {}, ['Loading...'])
+    new_element = Funicular::VDOM::Element.new('div', {}, [
+      Funicular::VDOM::Element.new('li', {key: 'a'})
+    ])
+
+    removes = @differ.diff(old_element, new_element)[0][2]
+
+    assert_equal([[0, 'Loading...']], removes)
+  end
+
   def test_diff_children_with_keys_element_props_changed
     old_element = Funicular::VDOM::Element.new('ul', {}, [
       Funicular::VDOM::Element.new('li', {key: 'a', class: 'foo'}),

@@ -159,7 +159,6 @@ module Funicular
         #    list it was replaced by arrived.
         removes = [] #: Array[[Integer, child_t]]
         old_children.each_with_index do |old_child, old_index|
-          next unless old_child.is_a?(VNode)
           next if matched_old_indices[old_index]
           removes << [old_index, old_child]
           has_change = true
